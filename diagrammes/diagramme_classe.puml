@@ -1,0 +1,87 @@
+@startuml Diagramme_de_classe_Gestion_Reservation_Salles
+
+class Employe {
+  - id : int
+  - numero : string
+  - nom : string
+  - prenom : string
+  - departement : string
+  --
+  + reserverSalle(salle, date, heure, duree) : Reservation
+  + consulterSesReservations() : List<Reservation>
+  + annulerReservation(reservation) : void
+}
+
+class Salle {
+  - id : int
+  - numero : string
+  - capacite : int
+  - type : TypeSalle
+  --
+  + estDisponible(date, heureDebut, heureFin) : boolean
+}
+
+enum TypeSalle {
+  SALLE_CONFERENCE
+  BUREAU
+  SALLE_FORMATION
+}
+
+class Reservation {
+  - id : int
+  - date : Date
+  - heureDebut : Time
+  - duree : int
+  - heureFin : Time
+  - statut : StatutReservation
+  --
+  + verifierConflit() : boolean
+  + calculerHeureFin() : Time
+  + annuler() : void
+}
+
+enum StatutReservation {
+  CONFIRMEE
+  ANNULEE
+}
+
+class Admin {
+  - id : int
+  - nom : string
+  - email : string
+  --
+  + gererEmployes() : void
+  + gererSalles() : void
+  + consulterToutesLesReservations() : List<Reservation>
+}
+
+class User {
+  - id : int
+  - name : string
+  - email : string
+  - password : string
+  - role : string
+  --
+  + login(email, password) : Token
+  + logout() : void
+}
+
+' --- Relations ---
+Employe "1" -- "0..*" Reservation : effectue >
+Salle "1" -- "0..*" Reservation : concerne >
+Admin ..> Salle : gère
+Admin ..> Employe : gère
+Admin ..> Reservation : consulte
+Salle "1" *-- "1" TypeSalle
+Reservation "1" *-- "1" StatutReservation
+User <|-- Admin
+User <|-- Employe
+
+note right of Reservation
+  Règle de gestion clé :
+  une salle ne peut pas avoir deux
+  réservations dont les créneaux
+  [heureDebut, heureFin] se chevauchent
+end note
+
+@enduml

@@ -1,0 +1,136 @@
+networks:
+  reservation-net:
+    driver: bridge
+
+volumes:
+  reservation-mysql-data:
+  reservation-grafana-data:
+  reservation-registry-data:
+
+services:
+
+  # ---------- Application : backend Laravel ----------
+  # L'entrypoint attend MySQL, joue "php artisan migrate", puis lance le serveur.
+  backend:
+    build: ./backend
+    container_name: reservation-backend
+    networks: [reservation-net]
+    ports:
+      - "8100:8000"
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+    environment:
+      DB_CONNECTION: mysql
+      DB_HOST: mysql-db
+      DB_PORT: 3306
+      DB_DATABASE: reservation_salles
+      DB_USERNAME: reservation
+      DB_PASSWORD: reservation
+    restart: unless-stopped
+
+  # ---------- Application : frontend React ----------
+  frontend:
+    build: ./frontend
+    container_name: reservation-frontend
+    networks: [reservation-net]
+    ports:
+      - "5174:5173"
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:8100/api
+    restart: unless-stopped
+
+  # ---------- Base de donnees applicative MySQL ----------
+  mysql-db:
+    image: mysql:8.0
+    container_name: reservation-mysql-db
+    networks: [reservation-net]
+    environment:
+      MYSQL_DATABASE: reservation_salles
+      MYSQL_USER: reservation
+      MYSQL_PASSWORD: reservation
+      MYSQL_ROOT_PASSWORD: rootpass
+    ports:
+      - "3311:3306"   # port externe different de truckfleet-manager (3307/3308)
+    volumes:
+      - reservation-mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ureservation", "-preservation"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # ---------- Flyway : migrations SQL versionnees (pipeline CI/CD) ----------
+  # Profil "ci" : ne demarre PAS avec un "docker compose up" simple.
+  # En local c'est Laravel qui cree le schema (il gere aussi users + tokens Sanctum,
+  # absents des scripts Flyway). Lancer les deux en meme temps entrainerait un conflit.
+  # Pour l'executer : docker compose --profile ci run --rm flyway
+  flyway:
+    image: flyway/flyway:10
+    container_name: reservation-flyway
+    profiles: ["ci"]
+    networks: [reservation-net]
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/flyway/sql
+    command: >
+      -url=jdbc:mysql://mysql-db:3306/reservation_salles
+      -user=reservation
+      -password=reservation
+      -connectRetries=10
+      -baselineOnMigrate=true
+      migrate
+
+  # ---------- Supervision : Prometheus + Grafana ----------
+  # Profil "monitoring" : optionnel, garde le demarrage local leger.
+  # Pour le lancer : docker compose --profile monitoring up -d
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: reservation-prometheus
+    profiles: ["monitoring"]
+    networks: [reservation-net]
+    ports:
+      - "9191:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: reservation-grafana
+    profiles: ["monitoring"]
+    networks: [reservation-net]
+    depends_on: [prometheus]
+    ports:
+      - "3100:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - reservation-grafana-data:/var/lib/grafana
+    restart: unless-stopped
+
+  # ---------- Registre d'images prive (pipeline CI/CD) ----------
+  registry:
+    image: registry:2
+    container_name: reservation-registry
+    profiles: ["ci"]
+    networks: [reservation-net]
+    ports:
+      - "5101:5000"
+    volumes:
+      - reservation-registry-data:/var/lib/registry
+    restart: unless-stopped
+
+# Notes :
+# - "docker compose up -d" ne demarre que mysql-db + backend + frontend (le necessaire pour developper).
+# - Les services CI/CD (flyway, registry) et de supervision (prometheus, grafana) sont derriere
+#   des profils pour ne pas alourdir le demarrage local.
+# - Ports volontairement differents de truckfleet-manager pour faire tourner les deux en parallele :
+#     backend 8100 | frontend 5174 | mysql 3311 | grafana 3100 | prometheus 9191 | registry 5101
