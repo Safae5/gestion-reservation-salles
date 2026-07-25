@@ -1,0 +1,125 @@
+version: "3.8"
+
+networks:
+  reservation-net:
+    driver: bridge
+
+volumes:
+  reservation-mysql-data:
+  reservation-grafana-data:
+  reservation-registry-data:
+
+services:
+
+  # ---------- Application : backend Laravel ----------
+  backend:
+    build: ./backend
+    container_name: reservation-backend
+    networks: [reservation-net]
+    ports:
+      - "8100:8000"
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql-db
+      DB_PORT: 3306
+      DB_DATABASE: reservation_salles
+      DB_USERNAME: reservation
+      DB_PASSWORD: reservation
+    restart: unless-stopped
+
+  # ---------- Application : frontend React ----------
+  frontend:
+    build: ./frontend
+    container_name: reservation-frontend
+    networks: [reservation-net]
+    ports:
+      - "5174:5173"
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:8100/api
+    restart: unless-stopped
+
+  # ---------- Base de données applicative MySQL ----------
+  mysql-db:
+    image: mysql:8.0
+    container_name: reservation-mysql-db
+    networks: [reservation-net]
+    environment:
+      MYSQL_DATABASE: reservation_salles
+      MYSQL_USER: reservation
+      MYSQL_PASSWORD: reservation
+      MYSQL_ROOT_PASSWORD: rootpass
+    ports:
+      - "3311:3306"   # port externe different de truckfleet-manager (3307/3308) pour eviter tout conflit
+    volumes:
+      - reservation-mysql-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------- Flyway : execute les migrations puis s'arrete ----------
+  flyway:
+    image: flyway/flyway:10
+    container_name: reservation-flyway
+    networks: [reservation-net]
+    depends_on:
+      mysql-db:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/flyway/sql
+    command: >
+      -url=jdbc:mysql://mysql-db:3306/reservation_salles
+      -user=reservation
+      -password=reservation
+      -connectRetries=10
+      migrate
+
+  # ---------- Supervision : Prometheus + Grafana ----------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: reservation-prometheus
+    networks: [reservation-net]
+    ports:
+      - "9191:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: reservation-grafana
+    networks: [reservation-net]
+    depends_on: [prometheus]
+    ports:
+      - "3100:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - reservation-grafana-data:/var/lib/grafana
+    restart: unless-stopped
+
+  # ---------- Registre d'images prive ----------
+  registry:
+    image: registry:2
+    container_name: reservation-registry
+    networks: [reservation-net]
+    ports:
+      - "5101:5000"
+    volumes:
+      - reservation-registry-data:/var/lib/registry
+    restart: unless-stopped
+
+# Notes :
+# - Ce compose ne relance PAS Jira/Jenkins : reutilise ceux deja lances pour TruckFleet Manager
+#   (cree juste un nouveau Pipeline Job dans le meme Jenkins, pointant vers ce nouveau depot GitHub).
+# - Tous les ports externes sont differents de ceux de truckfleet-manager pour pouvoir
+#   lancer les deux projets simultanement sans conflit :
+#     backend 8100 (au lieu de 8000) | frontend 5174 (au lieu de 5173) | mysql 3311 (au lieu de 3307/3308)
+#     grafana 3100 (au lieu de 3000) | prometheus 9191 (au lieu de 9090) | registry 5101 (au lieu de 5000)

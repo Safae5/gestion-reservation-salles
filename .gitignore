@@ -1,30 +1,20 @@
-/vendor/
-node_modules/
-npm-debug.log
-yarn-error.log
+# Backend Laravel
+backend/vendor/
+backend/.env
+backend/storage/*.key
+backend/bootstrap/cache/*
 
-# Laravel 4 specific
-bootstrap/compiled.php
-app/storage/
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
 
-# Laravel 5 & Lumen specific
-public/storage
-public/hot
+# Terraform
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/.terraform.lock.hcl
 
-# Laravel 5 & Lumen specific with changed public path
-public_html/storage
-public_html/hot
-
-storage/*.key
-.env
-Homestead.yaml
-Homestead.json
-/.vagrant
-.phpunit.result.cache
-
-/public/build
-/storage/pail
-.env.backup
-.env.production
-.phpactor.json
-auth.json
+# Divers
+*.log
+.DS_Store
