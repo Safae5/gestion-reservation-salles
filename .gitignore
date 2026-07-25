@@ -1,0 +1,20 @@
+# Backend Laravel
+backend/vendor/
+backend/.env
+backend/storage/*.key
+backend/bootstrap/cache/*
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Terraform
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/.terraform.lock.hcl
+
+# Divers
+*.log
+.DS_Store

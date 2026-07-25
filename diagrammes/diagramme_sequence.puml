@@ -1,0 +1,45 @@
+@startuml Diagramme_de_sequence_Reservation_Salle
+
+actor Employe
+participant "Frontend React" as Front
+participant "API Laravel\n(ReservationController)" as API
+participant "DisponibiliteService" as Service
+database "Base de données MySQL" as DB
+
+Employe -> Front : Remplit le formulaire\n(salle, date, heure, durée)
+activate Front
+
+Front -> API : POST /api/reservations\n{salle_id, employe_id, date, heure_debut, duree}
+activate API
+
+API -> Service : verifierDisponibilite(salle_id, date, heure_debut, heure_fin)
+activate Service
+
+Service -> DB : SELECT reservations\nWHERE salle_id = ? AND date = ?\nAND statut = 'confirmee'
+activate DB
+DB --> Service : liste des réservations existantes
+deactivate DB
+
+Service -> Service : calcule les chevauchements\n(heure_debut < fin_existante ET\nheure_fin > debut_existante)
+
+alt Conflit détecté
+    Service --> API : disponible = false
+    API --> Front : 409 Conflict\n{"message": "Salle déjà réservée sur ce créneau"}
+    Front --> Employe : Affiche message d'erreur
+else Aucun conflit
+    Service --> API : disponible = true
+    deactivate Service
+
+    API -> DB : INSERT INTO reservations\n(employe_id, salle_id, date, heure_debut, duree, statut)
+    activate DB
+    DB --> API : réservation créée (id)
+    deactivate DB
+
+    API --> Front : 201 Created\n{reservation}
+    deactivate API
+    Front --> Employe : Affiche confirmation de réservation
+end
+
+deactivate Front
+
+@enduml
